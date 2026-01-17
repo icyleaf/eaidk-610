@@ -1,5 +1,6 @@
 #==========================================================================
-# Description: Build eaidk-610 Armbian (Modified for RK3399 MPP Support)
+# Description: Build EAIDK-610 Armbian with RKMPP Support
+# Optimized for: Jellyfin Hardware Acceleration (/dev/mpp_service)
 #==========================================================================
 
 name: Build EAIDK-610 legacy armbian
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       set_release:
-        description: "Select OS Release."
+        description: "Select OS Release"
         required: false
         default: "bookworm"
         type: choice
@@ -17,52 +18,15 @@ on:
           - bullseye
           - jammy
           - bookworm
-      armbian_board:
-        description: "Select device board."
-        required: false
-        default: "eaidk-610"
-        type: choice
-        options:
-          - eaidk-610
-          - rock-pi-4b
-          - firefly-rk3399
       armbian_kernel:
-        description: "Select kernel version (Recommended 5.10.y for MPP)."
+        description: "Select Kernel (Must be rk3399 for MPP)"
         required: false
-        default: "5.10.y"
+        default: "6.1.y_rk3399"
         type: choice
         options:
-          - 5.10.y
-          - 5.15.y
-          - 6.1.y
-      auto_kernel:
-        description: "Auto use the latest kernel."
-        required: false
-        default: false
-        type: boolean
-      kernel_repo:
-        description: "Set the kernel repository."
-        required: false
-        default: "ophub/kernel"
-        type: choice
-        options:
-          - ophub/kernel
-      kernel_usage:
-        description: "Set the tags of the stable kernel."
-        required: false
-        default: "stable"
-        type: choice
-        options:
-          - stable
-          - dev
-      armbian_fstype:
-        description: "Select armbian rootfs type."
-        required: false
-        default: "ext4"
-        type: choice
-        options:
-          - ext4
-          - btrfs
+          - 5.10.y_rk3399
+          - 6.1.y_rk3399
+          - 6.6.y_rk3399
 
 env:
   TZ: Asia/Shanghai
@@ -77,23 +41,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Initialization environment
+      - name: Initialization Environment
         id: init
-        env:
-          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /usr/share/dotnet /etc/apt/sources.list.d /usr/local/lib/android 2>/dev/null
           sudo -E apt-get -y update
           sudo -E apt-get -y install $(curl -fsSL https://tinyurl.com/ubuntu2204-build-armbian)
           sudo timedatectl set-timezone "${TZ}"
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Create simulated physical disk
+      - name: Create Simulated Physical Disk
         run: |
-          mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 1)
-          root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
-          sudo truncate -s "${mnt_size}"G /mnt/mnt.img
-          sudo truncate -s "${root_size}"G /root.img
+          sudo truncate -s 20G /mnt/mnt.img
+          sudo truncate -s 20G /root.img
           sudo losetup /dev/loop6 /mnt/mnt.img
           sudo losetup /dev/loop7 /root.img
           sudo pvcreate /dev/loop6 /dev/loop7
@@ -104,50 +63,50 @@ jobs:
           sudo mount /dev/github/runner /builder
           sudo chown -R runner.runner /builder
 
-      - name: Download source code
+      - name: Download Armbian Builder
         id: down
         working-directory: /builder
         run: |
           git clone -q --single-branch --depth=1 --branch=main https://github.com/armbian/build.git build
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Compile Armbian
+      - name: Compile Base Image
         id: compile
-        working-directory: /builder
+        working-directory: /builder/build
         run: |
-          cd build/
-          # 修改点：将 BOARD 改为 rock-pi-4b 以获取 RK3399 完整的 VPU 驱动链
-          # 修改点：将 BRANCH 改为 legacy 以匹配 5.10.y 内核
-          ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=nanopct4 BRANCH=legacy BUILD_MINIMAL=no \
+          # 使用 nanopi-r4s (RK3399) 作为稳定底座，BRANCH 设为 current
+          ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=nanopi-r4s BRANCH=current BUILD_MINIMAL=no \
                        BUILD_ONLY=default HOST=armbian BUILD_DESKTOP=no EXPERT=yes KERNEL_CONFIGURE=no \
                        COMPRESS_OUTPUTIMAGE="sha" SHARE_LOG=yes
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Organize files
+      - name: Organize Files
         id: clean
         if: ${{ steps.compile.outputs.status == 'success' }}
         run: |
           git clone -q --single-branch --depth=1 --branch=main https://github.com/ophub/amlogic-s9xxx-armbian.git
+          # 提取工具脚本
           cp -a amlogic-s9xxx-armbian/compile-kernel .
           chmod +x ${ROOTFS_SCRIPT}
           ${ROOTFS_SCRIPT} -v ${{ inputs.set_release }}
-          echo "build_tag=Armbian_${{ inputs.armbian_board }}_${{ inputs.set_release }}" >> ${GITHUB_OUTPUT}
+          echo "build_tag=Armbian_eaidk-610_${{ inputs.set_release }}" >> ${GITHUB_OUTPUT}
           echo "status=success" >> ${GITHUB_OUTPUT}
 
-      - name: Rebuild and Inject Kernel
+      - name: Rebuild with RK3399 Kernel
         uses: ophub/amlogic-s9xxx-armbian@main
         if: ${{ steps.clean.outputs.status == 'success' }}
         with:
           build_target: armbian
           armbian_path: /builder/build/output/images/*.img.gz
-          armbian_board: ${{ inputs.armbian_board }}
+          armbian_board: eaidk-610
+          # 核心修改：强制指定内核包名包含 rk3399 关键字
           armbian_kernel: ${{ inputs.armbian_kernel }}
-          auto_kernel: ${{ inputs.auto_kernel }}
-          kernel_repo: ${{ inputs.kernel_repo }}
-          kernel_usage: ${{ inputs.kernel_usage }}
-          armbian_fstype: ${{ inputs.armbian_fstype }}
+          auto_kernel: false
+          kernel_repo: ophub/kernel
+          kernel_usage: stable
+          armbian_fstype: ext4
 
-      - name: Upload to Release
+      - name: Upload Image to Release
         uses: ncipollo/release-action@main
         if: ${{ env.PACKAGED_STATUS == 'success' }}
         with:
@@ -156,7 +115,8 @@ jobs:
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ### EAIDK-610 Armbian Image (RK3399)
-            - Kernel: ${{ inputs.armbian_kernel }}
-            - Based on: Rock Pi 4B Configuration (for VPU/MPP support)
-            - Default user: root / 1234
+            ### EAIDK-610 Armbian (RK3399) Latest Build
+            - **Target:** Jellyfin Hardware Acceleration
+            - **Kernel:** ${{ inputs.armbian_kernel }} (Includes RKMPP/VPU Driver)
+            - **Device Nodes:** Expected `/dev/mpp_service` and `/dev/dri/renderD128`
+            - **Base Config:** NanoPi R4S (Stable RK3399 Stack)
