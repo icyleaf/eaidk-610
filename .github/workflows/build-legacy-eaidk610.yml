@@ -98,7 +98,7 @@ jobs:
         working-directory: /builder
         run: |
           cd build/
-            ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=nanopi-r4s BRANCH=current BUILD_MINIMAL=no \
+            ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=rockpi-4b BRANCH=current BUILD_MINIMAL=no \
                          BUILD_ONLY=default HOST=armbian BUILD_DESKTOP=no EXPERT=yes KERNEL_CONFIGURE=no \
                          COMPRESS_OUTPUTIMAGE="sha" SHARE_LOG=yes
           echo "status=success" >> ${GITHUB_OUTPUT}
