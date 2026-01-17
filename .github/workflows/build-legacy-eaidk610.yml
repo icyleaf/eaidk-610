@@ -118,7 +118,7 @@ jobs:
           cd build/
           # 修改点：将 BOARD 改为 rock-pi-4b 以获取 RK3399 完整的 VPU 驱动链
           # 修改点：将 BRANCH 改为 legacy 以匹配 5.10.y 内核
-          ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=rock-pi-4b BRANCH=legacy BUILD_MINIMAL=no \
+          ./compile.sh RELEASE=${{ inputs.set_release }} BOARD=nanopct4 BRANCH=legacy BUILD_MINIMAL=no \
                        BUILD_ONLY=default HOST=armbian BUILD_DESKTOP=no EXPERT=yes KERNEL_CONFIGURE=no \
                        COMPRESS_OUTPUTIMAGE="sha" SHARE_LOG=yes
           echo "status=success" >> ${GITHUB_OUTPUT}
